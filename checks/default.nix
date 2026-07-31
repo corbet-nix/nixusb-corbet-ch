@@ -3,6 +3,14 @@
 # Everything nixusb produces is a pure function of nixusb.devices, so the entire contract is
 # checkable by evaluating the module and reading the result back. Both directions are proven: the
 # rules that SHOULD be generated are, and the inventories that MUST be rejected are.
+#
+# `systemManagerLib` (numtide/system-manager's own `lib`, e.g. `makeSystemConfig`) is accepted but
+# deliberately NOT used below: it builds a real `nixpkgs.hostPlatform` closure, pulls in `userborn`,
+# and `callPackage`s system-manager's own engine just to produce a `linkFarm` derivation -- exactly
+# the "VM, host, build" weight this file's header rules out. `systemManagerModule` (the actual
+# system-manager plane module, `system-manager/default.nix`) is what gives real coverage cheaply:
+# plain `lib.evalModules` over it, same shape as `evalNixusb` below, exercises the REAL module the
+# same way -- see `evalNixusbSystemManager`.
 { pkgs, nixpkgs, nixusbModule, systemManagerModule, systemManagerLib ? null }:
 let
   lib = nixpkgs.lib;
@@ -16,6 +24,29 @@ let
         options.services.udev.extraRules = lib.mkOption {
           type = lib.types.lines;
           default = "";
+        };
+        options.assertions = lib.mkOption { type = lib.types.listOf lib.types.unspecified; default = [ ]; };
+      }
+      ({ ... }: { nixusb.devices = devices; })
+      extra
+    ];
+  };
+
+  # Same idea, for system-manager's plane (`system-manager/default.nix`): it imports the SAME
+  # `../modules/options.nix` `nixusbModule` does -- one definition of `nixusb.devices` and its
+  # assertions, shared by both planes -- and projects the rules onto `environment.etc` instead of
+  # `services.udev.extraRules`. Stubbing `environment.etc` the same way `services.udev.extraRules`
+  # is stubbed above evaluates the REAL `systemManagerModule`, at the same near-zero pure-eval cost,
+  # without pulling in `systemManagerLib.makeSystemConfig` (see header comment for why not).
+  evalNixusbSystemManager = devices: extra: lib.evalModules {
+    modules = [
+      systemManagerModule
+      {
+        options.environment.etc = lib.mkOption {
+          type = lib.types.attrsOf (lib.types.submodule {
+            options.text = lib.mkOption { type = lib.types.lines; default = ""; };
+          });
+          default = { };
         };
         options.assertions = lib.mkOption { type = lib.types.listOf lib.types.unspecified; default = [ ]; };
       }
@@ -46,6 +77,8 @@ let
 
   rules = enabled.config.nixusb.rules;
 
+  smEnabled = evalNixusbSystemManager fixture { nixusb.enable = true; };
+
   # Collect the messages of assertions that actually FAILED, the way a NixOS build would.
   failedAssertions = cfg: map (a: a.message) (builtins.filter (a: !a.assertion) cfg.assertions);
 
@@ -73,6 +106,13 @@ let
     { nixusb.enable = true; };
 
   quoteName = evalNixusb
+    { "weird\"name" = { vendorId = "1234"; productId = "5678"; }; }
+    { nixusb.enable = true; };
+
+  # Same hostile name, evaluated through the system-manager plane -- proves the shared assertion
+  # actually fires there too, not just on the NixOS side (system-manager is nixusb's documented
+  # Arch target, and had zero coverage of its own before this).
+  smQuoteName = evalNixusbSystemManager
     { "weird\"name" = { vendorId = "1234"; productId = "5678"; }; }
     { nixusb.enable = true; };
 
@@ -138,6 +178,18 @@ let
       name = ''a device name containing '"' is REJECTED (would break out of the udev rule's quoting)'';
       ok = builtins.length (failedAssertions quoteName.config) >= 1;
     }
+    {
+      name = "system-manager plane: rules reach environment.etc when enabled (same shared options.nix)";
+      ok = smEnabled.config.environment.etc."udev/rules.d/70-nixusb-by-name.rules".text == rules;
+    }
+    {
+      name = "system-manager plane: a valid inventory raises no assertion";
+      ok = failedAssertions smEnabled.config == [ ];
+    }
+    {
+      name = ''system-manager plane: a device name containing '"' is REJECTED too (shared assertion, not NixOS-only)'';
+      ok = builtins.length (failedAssertions smQuoteName.config) >= 1;
+    }
   ];
 
   failures = builtins.filter (e: !e.ok) expectations;
@@ -146,7 +198,7 @@ in
   purity = pkgs.runCommand "nixusb-purity-checks" { } ''
     ${lib.optionalString (failures != [ ]) ''
       echo "nixusb checks FAILED:" >&2
-      ${lib.concatMapStringsSep "\n" (f: ''echo "  - ${f.name}" >&2'') failures}
+      ${lib.concatMapStringsSep "\n" (f: "echo ${lib.escapeShellArg ("  - " + f.name)} >&2") failures}
       exit 1
     ''}
     echo "nixusb: ${toString (builtins.length expectations)} checks passed"

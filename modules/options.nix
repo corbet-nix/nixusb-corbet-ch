@@ -57,10 +57,29 @@ let
   #
   # TRIED FIRST, DOESN'T WORK: wrapping `options.nixusb.devices`'s type in `lib.types.addCheck` to
   # reject a bad key at the type level, the same way `hex4` restricts vendorId/productId. Proven
-  # empirically NOT to fire: the ordinary declaration shape (`nixusb.devices."my/cam" = { ... };`,
-  # an attribute-PATH assignment) is merged by `attrsOf`'s own per-key logic before the container
-  # type's `addCheck` ever runs against the whole merged attrset, so a hostile key sailed straight
-  # through with no error. Left OUT rather than shipped as a check that silently does nothing.
+  # empirically NOT to fire, and NOT for the reason it looks like at first ("attrsOf merges each
+  # attribute-PATH assignment before the container's own check runs") -- a positive control (the
+  # same `addCheck` wrapper with an always-FALSE predicate, so it should reject literally anything)
+  # shows it DOES fire for `str`, `listOf str` and `attrsOf str`, and NEVER fires for
+  # `attrsOf (submodule ...)` specifically -- and identically so for BOTH the attribute-PATH idiom
+  # (`nixusb.devices."my/cam" = { ... };`) and the whole-attrset form
+  # (`nixusb.devices = { "my/cam" = { ... }; };`), which rules out "assignment style" as the cause.
+  #
+  # The real mechanism is in nixpkgs' module system itself (lib/modules.nix): `mergeOptionDecls`
+  # runs `fixupOptionType` on every option DECLARATION -- once, before any config values are even
+  # considered -- and whenever `type.getSubModules != null` it replaces the option's `type` with
+  # `type.substSubModules opt.options` to thread the submodule's own declarations through.
+  # `attrsOf`'s `getSubModules` is simply `elemType.getSubModules`, so it is non-null exactly when
+  # the element type is (or wraps) a submodule -- true here, false for `attrsOf str`. And `attrsOf`'s
+  # own `substSubModules = m: attrsWith { elemType = elemType.substSubModules m; ...}` (lib/types.nix)
+  # rebuilds a BRAND NEW, plain `attrsOf` type object from scratch -- `addCheck`'s wrapping
+  # (`elemType // { check = ...; merge = ...; }`) never overrides `substSubModules`, so the freshly
+  # rebuilt type silently drops the added `check`/`merge` entirely. Since this runs at
+  # declaration-fixup time, it doesn't matter how a definition is later written -- hence identical
+  # behaviour for both assignment styles above. `attrsOf str` never takes this branch at all
+  # (`str.getSubModules` is `null`), which is why addCheck survives there.
+  #
+  # Left OUT rather than shipped as a check that silently does nothing.
   #
   # What DOES work, empirically verified the same way: the plain `assertions` mechanism below,
   # exactly the same shape as the existing `duplicateKeys`/`ambiguousModels` checks -- it reads
