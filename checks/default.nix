@@ -63,6 +63,19 @@ let
     }
     { nixusb.enable = true; };
 
+  # Regression guard for the udev-injection fix in modules/options.nix (`name` -- the attrset key --
+  # used to go bare into ENV{NIXUSB_NAME} and SYMLINK+="usb/by-name/<name>/%k"). Both directions are
+  # exercised: a `/`-bearing name (silent SYMLINK path nesting) and a `"`-bearing name (breaks the
+  # udev rule's own quoting) must each trip the `invalidNames` assertion below, and an ordinary name
+  # must not.
+  slashName = evalNixusb
+    { "my/cam" = { vendorId = "1234"; productId = "5678"; }; }
+    { nixusb.enable = true; };
+
+  quoteName = evalNixusb
+    { "weird\"name" = { vendorId = "1234"; productId = "5678"; }; }
+    { nixusb.enable = true; };
+
   expectations = [
     {
       name = "serial-bearing device matches on its serial";
@@ -116,6 +129,14 @@ let
     {
       name = "a valid inventory raises no assertion";
       ok = failedAssertions enabled.config == [ ];
+    }
+    {
+      name = "a device name containing '/' is REJECTED (would silently nest a SYMLINK directory)";
+      ok = builtins.length (failedAssertions slashName.config) >= 1;
+    }
+    {
+      name = ''a device name containing '"' is REJECTED (would break out of the udev rule's quoting)'';
+      ok = builtins.length (failedAssertions quoteName.config) >= 1;
     }
   ];
 

@@ -47,6 +47,28 @@ let
 
   hex4 = lib.types.strMatching "[0-9a-f]{4}";
 
+  # `nixusb.devices`' attrset KEY (`name`, bound by the submodule's own `{ name, ... }:` below) is
+  # projected verbatim into a udev rule as both an ENV value and a SYMLINK path segment
+  # (mkIdentityRule / mkSymlinkRules below) -- unlike vendorId/productId/serial/tags, which are
+  # ordinary option VALUES and already carry a strMatching-style type, an attrsOf's key has no type
+  # of its own to constrain that way. Proven by eval: a name of `my/cam` silently nests a directory
+  # in the SYMLINK path (`usb/by-name/my/cam/%k`), and a name containing `"` breaks out of the
+  # udev rule's own quoting entirely.
+  #
+  # TRIED FIRST, DOESN'T WORK: wrapping `options.nixusb.devices`'s type in `lib.types.addCheck` to
+  # reject a bad key at the type level, the same way `hex4` restricts vendorId/productId. Proven
+  # empirically NOT to fire: the ordinary declaration shape (`nixusb.devices."my/cam" = { ... };`,
+  # an attribute-PATH assignment) is merged by `attrsOf`'s own per-key logic before the container
+  # type's `addCheck` ever runs against the whole merged attrset, so a hostile key sailed straight
+  # through with no error. Left OUT rather than shipped as a check that silently does nothing.
+  #
+  # What DOES work, empirically verified the same way: the plain `assertions` mechanism below,
+  # exactly the same shape as the existing `duplicateKeys`/`ambiguousModels` checks -- it reads
+  # `cfg.devices`'s keys back out (data, not a type) and fails the build with a clear message. One
+  # layer here, not two -- the type-level "layer" would have been decorative, and decorative
+  # security controls are worse than none (they read as covered when they are not).
+  deviceNameType = lib.types.strMatching "[A-Za-z0-9][A-Za-z0-9_-]*";
+
   deviceList = lib.mapAttrsToList (name: device: { inherit name device; }) cfg.devices;
 
   # A device's identity key. Serial-less devices key on vendor:product alone, which is what makes
@@ -67,6 +89,10 @@ let
     (builtins.filter ({ device, ... }: device.serial == null) deviceList);
 
   ambiguousModels = lib.filterAttrs (_: entries: builtins.length entries > 1) seriallessByModel;
+
+  # Names that don't satisfy `deviceNameType` -- see that binding's comment for the (empirically
+  # ruled out) type-level alternative and why this plain data check is what actually works.
+  invalidNames = builtins.filter (n: !(deviceNameType.check n)) (lib.attrNames cfg.devices);
 
   # One match rule per device. `ACTION!="remove"` keeps the stamp off teardown events, where the
   # attributes we match on may already be gone.
@@ -223,6 +249,11 @@ in
         This is pure declared data. It is readable by other modules regardless of `nixusb.enable`,
         and it is the single place this family states which USB devices exist and what they are
         called — consumers read it rather than restating VID/PID themselves.
+
+        Each key MUST match `[A-Za-z0-9][A-Za-z0-9_-]*` (enforced by an assertion in `config`, see
+        `deviceNameType`) -- it is projected verbatim into a udev rule as an `ENV` value and a
+        `SYMLINK` path segment, and udev's own quoting/path syntax gives a wider name no safe
+        meaning.
       '';
       example = lib.literalExpression ''
         {
@@ -291,6 +322,18 @@ in
             udevadm info -q property /sys/bus/usb/devices/<dev> | grep ID_SERIAL_SHORT
           and set `serial` on each. If the hardware genuinely reports none, only one such device can
           be declared.
+        '';
+      }
+      {
+        assertion = invalidNames == [ ];
+        message = ''
+          nixusb.devices declares a name that is not a safe udev identifier/path segment:
+          ${lib.concatMapStringsSep "\n" (n: "  \"${n}\"") invalidNames}
+
+          Each name must match [A-Za-z0-9][A-Za-z0-9_-]*. The name is projected verbatim into a
+          udev rule as ENV{NIXUSB_NAME} and into a SYMLINK path segment
+          (usb/by-name/<name>/%k) -- a `/` silently nests an extra directory, and a `"` breaks
+          out of the rule's own quoting entirely. Rename the device to a plain identifier.
         '';
       }
     ];
