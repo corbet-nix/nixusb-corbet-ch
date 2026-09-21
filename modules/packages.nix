@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # nixusb's package layer — the USB tooling catalogue, declared per host.
 #

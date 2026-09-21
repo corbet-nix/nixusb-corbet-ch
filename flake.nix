@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 {
   description = "The host's USB device inventory as declared data, plus stable, enumeration-independent identity stamped onto every device node those devices create.";
 

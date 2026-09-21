@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # nixusb — the host's USB device inventory as declared data, and stable, enumeration-independent
 # identity stamped onto every device node those devices create.
 #

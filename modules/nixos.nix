@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # NixOS plane: hand the generated rules to services.udev.
 { lib, config, ... }:
 let

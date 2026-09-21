@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Arch/CachyOS plane: two independent halves.
 #
 # 1. system-manager has no `services.udev`, so the device-inventory projection writes the rules

@@ -18,7 +18,7 @@ That ordering is not stable across a reboot, a replug, a dock hotplug, or a kern
 is not stable across two machines with the same devices attached. Anything that hardcodes one of
 those names is a latent bug waiting for a reboot.
 
-This is the same failure class [`nixgpu`](https://github.com/julian-corbet/nixgpu-corbet-ch)'s
+This is the same failure class [`nixgpu`](https://github.com/corbet-nix/nixgpu-corbet-ch)'s
 `stable-device-paths` solved for DRM, where a DisplayLink dock's `evdi` module claimed `card1` and
 moved a real GPU to `card2` while a device plugin was still binding a hardcoded `/dev/dri/card1`.
 `nixusb` is the USB-side sibling: same doctrine, different bus. It does not extend nixgpu's schema
@@ -148,6 +148,6 @@ Everything nixusb produces is a pure function of `nixusb.devices`, so the whole 
 verifiable by evaluating the module and reading the result back. Both directions are proven: that
 the right rules are generated, **and** that malformed inventories are rejected.
 
-## License
+## Licence
 
-MIT
+Outbound licence is `MIT OR Apache-2.0`. See `LICENSE-MIT` and `LICENSE-APACHE`; every source file carries `SPDX-License-Identifier: MIT OR Apache-2.0`.

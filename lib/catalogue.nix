@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # nixusb's package catalogue — the USB tooling a host runs, as opposed to modules/options.nix's
 # device INVENTORY (which devices exist and what they are called). Two separate concerns: a host

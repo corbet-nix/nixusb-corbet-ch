@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # The NixOS backend for nixusb's package layer: resolve the selection into
 # environment.systemPackages, entirely from nixpkgs.

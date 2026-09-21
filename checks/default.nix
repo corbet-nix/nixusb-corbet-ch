@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 # Pure evaluation checks — no VM, no host, no build of anything that acts on a machine.
 #
 # Everything nixusb produces is a pure function of nixusb.devices, so the entire contract is
